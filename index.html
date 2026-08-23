@@ -331,9 +331,21 @@
       </div>
       <div id="expense-chips" class="chipwrap"></div>
       <div id="income-chips" class="chipwrap" style="display:none;"></div>
-      <div class="field">
-        <label>メモ</label>
-        <input type="text" id="memo-input" placeholder="品目やお店">
+      <div id="expense-memo-fields">
+        <div class="field">
+          <label>品目</label>
+          <input type="text" id="item-input" placeholder="何に使った?">
+        </div>
+        <div class="field">
+          <label>お店</label>
+          <input type="text" id="store-input" placeholder="どこで払った?">
+        </div>
+      </div>
+      <div id="income-memo-fields" style="display:none;">
+        <div class="field">
+          <label>内容</label>
+          <input type="text" id="income-memo-input" placeholder="給与、賞与など">
+        </div>
       </div>
       <div class="field">
         <label>日付</label>
@@ -405,10 +417,12 @@
     <div class="section-title">過去データの一括インポート</div>
     <div class="card" style="padding:14px;">
       <p class="about-note" style="margin-top:0;">1行につき1件、次の形式で貼り付けてください。<br>
-      <b>日付,支出or収入,カテゴリー名,メモ,金額</b><br>
-      例:2026-08-05,支出,食費,スーパー,1200<br>
+      <b>日付,支出or収入,カテゴリー名,品目,お店,金額</b><br>
+      支出の例:2026-08-05,支出,食費,パン,スーパー,1200<br>
+      収入の例:2026-08-17,収入,利息,利息,十六銀行,1595<br>
+      (収入の場合「品目」欄に内容、「お店」欄に振込元などを入れてください。空欄でも構いません)<br>
       存在しないカテゴリー名は自動で追加されます。</p>
-      <textarea id="bulk-import-text" rows="6" style="width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; font-size:13px; font-family:'Zen Kaku Gothic New',sans-serif; resize:vertical;" placeholder="2026-08-05,支出,食費,スーパー,1200&#10;2026-08-17,収入,利息,十六銀行,1595"></textarea>
+      <textarea id="bulk-import-text" rows="6" style="width:100%; border:1px solid var(--line); border-radius:8px; padding:10px; font-size:13px; font-family:'Zen Kaku Gothic New',sans-serif; resize:vertical;" placeholder="2026-08-05,支出,食費,パン,スーパー,1200&#10;2026-08-17,収入,利息,利息,十六銀行,1595"></textarea>
       <div style="height:10px;"></div>
       <button class="btn-secondary" id="bulk-import-btn">この内容をまとめて登録する</button>
       <div id="bulk-import-result" class="about-note" style="margin-top:8px;"></div>
@@ -462,9 +476,21 @@
         <input type="text" id="modal-amount" inputmode="numeric">
       </div>
       <div id="modal-chips" class="chipwrap"></div>
-      <div class="field">
-        <label>メモ</label>
-        <input type="text" id="modal-memo">
+      <div id="modal-expense-memo-fields">
+        <div class="field">
+          <label>品目</label>
+          <input type="text" id="modal-item">
+        </div>
+        <div class="field">
+          <label>お店</label>
+          <input type="text" id="modal-store">
+        </div>
+      </div>
+      <div id="modal-income-memo-fields" style="display:none;">
+        <div class="field">
+          <label>内容</label>
+          <input type="text" id="modal-memo">
+        </div>
       </div>
       <div class="field">
         <label>日付</label>
@@ -583,7 +609,9 @@
   function resetInputForm(){
     document.getElementById('amount-input').value = '';
     document.getElementById('amount-input').dataset.raw = '';
-    document.getElementById('memo-input').value = '';
+    document.getElementById('item-input').value = '';
+    document.getElementById('store-input').value = '';
+    document.getElementById('income-memo-input').value = '';
     document.getElementById('date-input').value = todayISO();
   }
 
@@ -594,8 +622,15 @@
     if(!raw || raw<=0){ shake(amountEl); return; }
     if(!catId){ flashChips(currentType); return; }
     var date = document.getElementById('date-input').value || todayISO();
-    var memo = document.getElementById('memo-input').value.trim();
-    transactions.push({id:uid(), type:currentType, categoryId:catId, amount:raw, memo:memo, date:date});
+    var item='', store='', memo='';
+    if(currentType==='expense'){
+      item = document.getElementById('item-input').value.trim();
+      store = document.getElementById('store-input').value.trim();
+      memo = [item, store].filter(Boolean).join(' ');
+    } else {
+      memo = document.getElementById('income-memo-input').value.trim();
+    }
+    transactions.push({id:uid(), type:currentType, categoryId:catId, amount:raw, memo:memo, item:item, store:store, date:date});
     persistTx();
     resetInputForm();
     selected[currentType] = null;
@@ -765,10 +800,26 @@
     editingTxId = txId;
     document.getElementById('modal-amount').value = tx.amount.toLocaleString('ja-JP');
     document.getElementById('modal-amount').dataset.raw = tx.amount;
-    document.getElementById('modal-memo').value = tx.memo || '';
     document.getElementById('modal-date').value = tx.date;
     document.getElementById('modal-chips').innerHTML = categories[tx.type].map(function(c){return chipHTML(c, tx.categoryId);}).join('');
     document.getElementById('modal-chips').dataset.type = tx.type;
+    if(tx.type==='expense'){
+      document.getElementById('modal-expense-memo-fields').style.display = 'block';
+      document.getElementById('modal-income-memo-fields').style.display = 'none';
+      var itemVal = tx.item, storeVal = tx.store;
+      if(itemVal===undefined){
+        // older records only have a combined memo; split by last space as a best guess
+        var parts = (tx.memo||'').split(' ');
+        storeVal = parts.length>1 ? parts.pop() : '';
+        itemVal = parts.join(' ');
+      }
+      document.getElementById('modal-item').value = itemVal || '';
+      document.getElementById('modal-store').value = storeVal || '';
+    } else {
+      document.getElementById('modal-expense-memo-fields').style.display = 'none';
+      document.getElementById('modal-income-memo-fields').style.display = 'block';
+      document.getElementById('modal-memo').value = tx.memo || '';
+    }
     document.getElementById('modal-overlay').classList.add('open');
   }
   function closeModal(){
@@ -782,7 +833,13 @@
     var selChip = document.querySelector('#modal-chips .cat-chip.selected');
     tx.amount = raw>0 ? raw : tx.amount;
     if(selChip) tx.categoryId = selChip.dataset.cat;
-    tx.memo = document.getElementById('modal-memo').value.trim();
+    if(tx.type==='expense'){
+      tx.item = document.getElementById('modal-item').value.trim();
+      tx.store = document.getElementById('modal-store').value.trim();
+      tx.memo = [tx.item, tx.store].filter(Boolean).join(' ');
+    } else {
+      tx.memo = document.getElementById('modal-memo').value.trim();
+    }
     tx.date = document.getElementById('modal-date').value || tx.date;
     persistTx();
     closeModal();
@@ -894,8 +951,8 @@
   }
   function parseBulkLine(line){
     var parts = line.split(',').map(function(s){ return s.trim(); });
-    if(parts.length<5) return {error:'列が足りません(5つ必要)'};
-    var dateRaw = parts[0], typeRaw = parts[1], catName = parts[2], memo = parts[3], amtRaw = parts[4];
+    if(parts.length<6) return {error:'列が足りません(6つ必要:日付,支出or収入,カテゴリー,品目,お店,金額)'};
+    var dateRaw = parts[0], typeRaw = parts[1], catName = parts[2], item = parts[3], store = parts[4], amtRaw = parts[5];
     var d = new Date(dateRaw.replace(/\//g,'-'));
     if(isNaN(d.getTime())) return {error:'日付を読み取れません: '+dateRaw};
     var iso = toISO(d);
@@ -905,7 +962,8 @@
     var amount = Number(String(amtRaw).replace(/[^0-9.\-]/g,''));
     if(!amount || amount<=0) return {error:'金額を読み取れません: '+amtRaw};
     var categoryId = findOrCreateCategory(type, catName);
-    return {tx:{id:uid(), type:type, categoryId:categoryId, amount:amount, memo:memo, date:iso}};
+    var memo = [item, store].filter(Boolean).join(' ');
+    return {tx:{id:uid(), type:type, categoryId:categoryId, amount:amount, memo:memo, item:item, store:store, date:iso}};
   }
   function runBulkImport(){
     var text = document.getElementById('bulk-import-text').value;
@@ -938,6 +996,8 @@
     document.querySelectorAll('#type-toggle button').forEach(function(b){ b.classList.toggle('active', b===btn); });
     document.getElementById('expense-chips').style.display = currentType==='expense' ? 'flex':'none';
     document.getElementById('income-chips').style.display = currentType==='income' ? 'flex':'none';
+    document.getElementById('expense-memo-fields').style.display = currentType==='expense' ? 'block':'none';
+    document.getElementById('income-memo-fields').style.display = currentType==='income' ? 'block':'none';
     document.getElementById('save-btn').className = 'btn-primary ' + currentType;
   });
 
