@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root{
     --paper:#F6F1E7;
@@ -240,6 +241,9 @@
   .savings-card .v.pos{ color:var(--indigo); }
   .savings-card .n{ font-size:11.5px; color:var(--ink-soft); margin-top:12px; line-height:1.6;}
 
+  .chart-sublabel{ font-size:12px; color:var(--ink-soft); margin:0 0 10px 4px; }
+  .chart-wrap{ position:relative; width:100%; }
+
   /* ---------- SETTINGS view ---------- */
   .cat-list-row{ display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--line);}
   .cat-list-row:last-child{border-bottom:none;}
@@ -391,6 +395,36 @@
       <button data-gtype="savings">貯金額</button>
     </div>
     <div id="graph-body"></div>
+
+    <div class="section-title">全期間の収支推移</div>
+    <div class="card" style="padding:16px 10px 10px;">
+      <div class="chart-wrap" id="chart-monthly-wrap" style="height:190px;">
+        <canvas id="chart-monthly"></canvas>
+      </div>
+      <p class="empty-note" id="chart-monthly-empty" style="display:none;">まだ記録がありません。</p>
+    </div>
+
+    <div class="section-title">カテゴリー・トレンド</div>
+    <div class="segmented" id="rank-toggle" style="margin-bottom:12px;">
+      <button data-rtype="expense" class="active" data-active-color="expense">支出</button>
+      <button data-rtype="income" data-active-color="income">収入</button>
+    </div>
+
+    <div class="card" style="padding:16px 10px 10px; margin-bottom:14px;">
+      <p class="chart-sublabel">カテゴリー別ランキング(全期間)</p>
+      <div class="chart-wrap" id="chart-category-wrap" style="height:210px;">
+        <canvas id="chart-category"></canvas>
+      </div>
+      <p class="empty-note" id="chart-category-empty" style="display:none;">まだ記録がありません。</p>
+    </div>
+
+    <div class="card" style="padding:16px 10px 10px;">
+      <p class="chart-sublabel">月別×カテゴリー推移</p>
+      <div class="chart-wrap" id="chart-trend-wrap" style="height:230px;">
+        <canvas id="chart-trend"></canvas>
+      </div>
+      <p class="empty-note" id="chart-trend-empty" style="display:none;">まだ記録がありません。</p>
+    </div>
   </main>
 
   <!-- 設定 -->
@@ -586,6 +620,16 @@
   var graphMonth = firstOfMonth(new Date());
   var graphType = 'expense';
   var editingTxId = null;
+  var rankType = 'expense';
+  var chartMonthly = null, chartCategory = null, chartTrend = null;
+  if(typeof Chart !== 'undefined'){
+    Chart.defaults.font.family = "'Zen Kaku Gothic New', sans-serif";
+    Chart.defaults.color = '#2B2A28';
+  }
+  function formatMonthShort(mo){
+    var parts = mo.split('-');
+    return parts[0].slice(2) + '/' + parts[1];
+  }
 
   function firstOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
   function addMonths(d, n){ return new Date(d.getFullYear(), d.getMonth()+n, 1); }
@@ -602,7 +646,7 @@
     document.querySelectorAll('#tabbar button').forEach(function(b){ b.classList.toggle('active', b.dataset.tab===tab); });
     document.getElementById('subhead').textContent = subheads[tab] || '';
     if(tab==='calendar') renderCalendar();
-    if(tab==='graph') renderGraph();
+    if(tab==='graph') renderGraphAll();
     if(tab==='settings') renderSettingsCats();
   }
 
@@ -749,6 +793,140 @@
     document.getElementById('cal-tx-list').innerHTML = out;
   }
 
+  /* ---------------- 全期間ダッシュボード用の集計 ---------------- */
+  function computeMonthlyAll(){
+    var map = {};
+    transactions.forEach(function(t){
+      var mo = t.date.slice(0,7);
+      if(!map[mo]) map[mo] = {inc:0, exp:0};
+      if(t.type==='income') map[mo].inc += t.amount; else map[mo].exp += t.amount;
+    });
+    var months = Object.keys(map).sort();
+    return months.map(function(mo){
+      var v = map[mo];
+      return {month:mo, inc:v.inc, exp:v.exp, net:v.inc-v.exp};
+    });
+  }
+
+  function computeCategoryAll(type){
+    var map = {};
+    transactions.forEach(function(t){
+      if(t.type!==type) return;
+      map[t.categoryId] = (map[t.categoryId]||0) + t.amount;
+    });
+    var rows = Object.keys(map).map(function(id){
+      var cat = catById(type, id);
+      return {id:id, name:cat.name, color:cat.color, amount:map[id]};
+    });
+    rows.sort(function(a,b){ return b.amount-a.amount; });
+    return rows;
+  }
+
+  function computeTrendAll(type){
+    var monthCatMap = {};
+    transactions.forEach(function(t){
+      if(t.type!==type) return;
+      var mo = t.date.slice(0,7);
+      if(!monthCatMap[mo]) monthCatMap[mo] = {};
+      monthCatMap[mo][t.categoryId] = (monthCatMap[mo][t.categoryId]||0) + t.amount;
+    });
+    var months = Object.keys(monthCatMap).sort();
+    var catRows = computeCategoryAll(type);
+    var datasets = catRows.map(function(cat){
+      return {
+        id: cat.id, name: cat.name, color: cat.color,
+        data: months.map(function(mo){ return (monthCatMap[mo] && monthCatMap[mo][cat.id]) || 0; })
+      };
+    });
+    return {months:months, datasets:datasets};
+  }
+
+  function renderChartsDashboard(){
+    if(typeof Chart === 'undefined') return; // CDNが読み込めない場合は静かにスキップ
+
+    var monthly = computeMonthlyAll();
+    var catRows = computeCategoryAll(rankType);
+    var trend = computeTrendAll(rankType);
+
+    // --- 1. 全期間の収支推移 ---
+    if(chartMonthly){ chartMonthly.destroy(); chartMonthly = null; }
+    document.getElementById('chart-monthly-wrap').style.display = monthly.length ? '' : 'none';
+    document.getElementById('chart-monthly-empty').style.display = monthly.length ? 'none' : '';
+    if(monthly.length){
+      chartMonthly = new Chart(document.getElementById('chart-monthly').getContext('2d'), {
+        data: {
+          labels: monthly.map(function(m){ return formatMonthShort(m.month); }),
+          datasets: [
+            { type:'bar', label:'収入', data: monthly.map(function(m){return m.inc;}), backgroundColor:'#2E7D5B', borderRadius:3, order:2 },
+            { type:'bar', label:'支出', data: monthly.map(function(m){return m.exp;}), backgroundColor:'#B8443C', borderRadius:3, order:2 },
+            { type:'line', label:'収支', data: monthly.map(function(m){return m.net;}), borderColor:'#B4922E', backgroundColor:'#B4922E', borderWidth:2, pointRadius:2.5, tension:.25, order:1 }
+          ]
+        },
+        options: {
+          maintainAspectRatio:false,
+          scales:{
+            y:{ ticks:{ font:{size:10}, callback:function(v){ return v.toLocaleString('ja-JP'); } }, grid:{ color:'rgba(43,42,40,0.07)' } },
+            x:{ ticks:{ font:{size:10} }, grid:{ display:false } }
+          },
+          plugins:{
+            legend:{ position:'bottom', labels:{ boxWidth:12, usePointStyle:true, font:{size:11} } },
+            tooltip:{ callbacks:{ label:function(c){ return c.dataset.label+': '+c.parsed.y.toLocaleString('ja-JP')+'円'; } } }
+          }
+        }
+      });
+    }
+
+    // --- 2. カテゴリー別ランキング ---
+    if(chartCategory){ chartCategory.destroy(); chartCategory = null; }
+    document.getElementById('chart-category-wrap').style.display = catRows.length ? '' : 'none';
+    document.getElementById('chart-category-empty').style.display = catRows.length ? 'none' : '';
+    if(catRows.length){
+      chartCategory = new Chart(document.getElementById('chart-category').getContext('2d'), {
+        type:'bar',
+        data:{
+          labels: catRows.map(function(c){return c.name;}),
+          datasets:[{ data: catRows.map(function(c){return c.amount;}), backgroundColor: catRows.map(function(c){return c.color;}), borderRadius:3, barThickness:16 }]
+        },
+        options:{
+          indexAxis:'y',
+          maintainAspectRatio:false,
+          scales:{
+            x:{ ticks:{ font:{size:10}, callback:function(v){ return v.toLocaleString('ja-JP'); } }, grid:{ color:'rgba(43,42,40,0.07)' } },
+            y:{ ticks:{ font:{size:11.5} }, grid:{ display:false } }
+          },
+          plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:function(c){ return c.parsed.x.toLocaleString('ja-JP')+'円'; } } } }
+        }
+      });
+    }
+
+    // --- 3. 月別×カテゴリー推移 ---
+    if(chartTrend){ chartTrend.destroy(); chartTrend = null; }
+    document.getElementById('chart-trend-wrap').style.display = trend.months.length ? '' : 'none';
+    document.getElementById('chart-trend-empty').style.display = trend.months.length ? 'none' : '';
+    if(trend.months.length){
+      chartTrend = new Chart(document.getElementById('chart-trend').getContext('2d'), {
+        type:'bar',
+        data:{
+          labels: trend.months.map(formatMonthShort),
+          datasets: trend.datasets.map(function(d){
+            return { label:d.name, data:d.data, backgroundColor:d.color, stack:'s' };
+          })
+        },
+        options:{
+          maintainAspectRatio:false,
+          scales:{
+            x:{ stacked:true, ticks:{font:{size:10}}, grid:{display:false} },
+            y:{ stacked:true, ticks:{ font:{size:10}, callback:function(v){return v.toLocaleString('ja-JP');} }, grid:{ color:'rgba(43,42,40,0.07)' } }
+          },
+          plugins:{
+            legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true, font:{size:10} } },
+            tooltip:{ callbacks:{ label:function(c){ return c.dataset.label+': '+c.parsed.y.toLocaleString('ja-JP')+'円'; } } }
+          }
+        }
+      });
+    }
+  }
+
   /* ---------------- graph view ---------------- */
   function renderGraph(){
     document.getElementById('graph-month-label').textContent = monthLabel(graphMonth);
@@ -807,6 +985,11 @@
         '<div class="donut-center"><div class="t">合計</div><div class="v">'+total.toLocaleString('ja-JP')+'円</div></div>'+
       '</div>'+
       '<div class="card" style="margin-top:14px;">'+legendHtml+'</div>';
+  }
+
+  function renderGraphAll(){
+    renderGraph();
+    renderChartsDashboard();
   }
 
   /* ---------------- edit modal ---------------- */
@@ -1055,6 +1238,13 @@
   });
   document.querySelector('[data-graph-nav="-1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,-1); renderGraph(); });
   document.querySelector('[data-graph-nav="1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,1); renderGraph(); });
+
+  document.getElementById('rank-toggle').addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-rtype]'); if(!btn) return;
+    rankType = btn.dataset.rtype;
+    document.querySelectorAll('#rank-toggle button').forEach(function(b){ b.classList.toggle('active', b===btn); });
+    renderChartsDashboard();
+  });
 
   document.getElementById('modal-amount').addEventListener('input', function(){
     var raw = this.value.replace(/[^0-9]/g,'');
