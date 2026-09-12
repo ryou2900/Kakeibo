@@ -818,23 +818,19 @@
   }
 
   /* ---------------- 生活費・自由費・貯蓄バランスの集計 ---------------- */
-  function computeBalanceAll(){
-    var map = {};
-    transactions.forEach(function(t){
-      var mo = t.date.slice(0,7);
-      if(!map[mo]) map[mo] = {income:0, living:0, discretionary:0};
-      if(t.type==='income'){
-        map[mo].income += t.amount;
-      } else {
-        if(LIVING_IDS.indexOf(t.categoryId)>=0) map[mo].living += t.amount;
-        else map[mo].discretionary += t.amount;
+  function computeBalanceForMonth(y, m){
+    var monthTx = transactions.filter(function(t){
+      return t.date.slice(0,4)==(''+y) && Number(t.date.slice(5,7))===m+1;
+    });
+    var income=0, living=0, discretionary=0;
+    monthTx.forEach(function(t){
+      if(t.type==='income'){ income += t.amount; }
+      else{
+        if(LIVING_IDS.indexOf(t.categoryId)>=0) living += t.amount;
+        else discretionary += t.amount;
       }
     });
-    var months = Object.keys(map).sort().reverse(); // 新しい月が上に来るように
-    return months.map(function(mo){
-      var v = map[mo];
-      return { month:mo, income:v.income, living:v.living, discretionary:v.discretionary, savings: v.income - v.living - v.discretionary };
-    });
+    return { income:income, living:living, discretionary:discretionary, savings: income-living-discretionary, hasAny: monthTx.length>0 };
   }
 
   function pct(n){
@@ -866,31 +862,26 @@
 
   function renderBalanceList(){
     var el = document.getElementById('balance-list');
-    var rows = computeBalanceAll();
-    if(rows.length===0){
-      el.innerHTML = '<p class="empty-note">まだ記録がありません。「入力」タブから記録してみましょう。</p>';
+    var y = graphMonth.getFullYear(), m = graphMonth.getMonth();
+    var r = computeBalanceForMonth(y, m);
+    if(!r.hasAny){
+      el.innerHTML = '<p class="empty-note">この月の記録はまだありません。「入力」タブから記録してみましょう。</p>';
       return;
     }
     var targets = loadTargets();
-    var html = '';
-    rows.forEach(function(r){
-      var hasIncome = r.income > 0;
-      var base = hasIncome ? r.income : (r.living + r.discretionary);
-      var livingPct = base>0 ? (r.living/base*100) : 0;
-      var discPct = base>0 ? (r.discretionary/base*100) : 0;
-      var savingsPct = base>0 ? (r.savings/base*100) : 0;
-      var noteHtml = hasIncome ? '' : '<p class="bal-amt" style="margin-bottom:10px;">この月は収入の記録がないため、支出合計を基準(100%)にした割合です。</p>';
+    var hasIncome = r.income > 0;
+    var base = hasIncome ? r.income : (r.living + r.discretionary);
+    var livingPct = base>0 ? (r.living/base*100) : 0;
+    var discPct = base>0 ? (r.discretionary/base*100) : 0;
+    var savingsPct = base>0 ? (r.savings/base*100) : 0;
+    var noteHtml = hasIncome ? '' : '<p class="bal-amt" style="margin-bottom:10px;">この月は収入の記録がないため、支出合計を基準(100%)にした割合です。</p>';
 
-      var y = r.month.slice(0,4), m = Number(r.month.slice(5,7));
-      html += '<div class="card bal-card">'+
-        '<div class="bal-month">'+y+'年'+m+'月</div>'+
-        noteHtml+
-        balanceRowHTML('生活費', '#6C7A96', r.living, livingPct, targets.living, 'warn')+
-        balanceRowHTML('自由費', '#B4922E', r.discretionary, discPct, targets.discretionary, 'warn')+
-        balanceRowHTML('貯蓄・投資', '#2E7D5B', r.savings, savingsPct, targets.savings, 'good')+
-      '</div>';
-    });
-    el.innerHTML = html;
+    el.innerHTML = '<div class="card bal-card">'+
+      noteHtml+
+      balanceRowHTML('生活費', '#6C7A96', r.living, livingPct, targets.living, 'warn')+
+      balanceRowHTML('自由費', '#B4922E', r.discretionary, discPct, targets.discretionary, 'warn')+
+      balanceRowHTML('貯蓄・投資', '#2E7D5B', r.savings, savingsPct, targets.savings, 'good')+
+    '</div>';
   }
 
   /* ---------------- graph view ---------------- */
@@ -1202,8 +1193,8 @@
     document.querySelectorAll('#graph-toggle button').forEach(function(b){ b.classList.toggle('active', b===btn); });
     renderGraph();
   });
-  document.querySelector('[data-graph-nav="-1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,-1); renderGraph(); });
-  document.querySelector('[data-graph-nav="1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,1); renderGraph(); });
+  document.querySelector('[data-graph-nav="-1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,-1); renderGraphAll(); });
+  document.querySelector('[data-graph-nav="1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,1); renderGraphAll(); });
 
   ['target-living','target-discretionary','target-savings'].forEach(function(id){
     var input = document.getElementById(id);
