@@ -10,7 +10,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root{
     --paper:#F6F1E7;
@@ -241,8 +240,27 @@
   .savings-card .v.pos{ color:var(--indigo); }
   .savings-card .n{ font-size:11.5px; color:var(--ink-soft); margin-top:12px; line-height:1.6;}
 
-  .chart-sublabel{ font-size:12px; color:var(--ink-soft); margin:0 0 10px 4px; }
-  .chart-wrap{ position:relative; width:100%; }
+  .bal-card{ margin-bottom:12px; padding:15px 15px 13px; }
+  .bal-month{ font-family:'Shippori Mincho', serif; font-size:14px; font-weight:700; margin-bottom:12px; letter-spacing:.03em; }
+  .bal-row{ margin-bottom:13px; }
+  .bal-row:last-child{ margin-bottom:0; }
+  .bal-row-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px; }
+  .bal-row-head .name{ font-size:12.5px; font-weight:700; display:flex; align-items:center; gap:5px;}
+  .bal-row-head .name::before{ content:""; width:8px; height:8px; border-radius:2px; background:var(--bal-color,#999); display:inline-block;}
+  .bal-row-head .pct{ font-family:'Shippori Mincho', serif; font-size:14px; font-weight:700; color:var(--ink); }
+  .bal-row-head .pct.warn{ color:var(--vermillion); }
+  .bal-row-head .pct.good{ color:var(--indigo); }
+  .bal-row-head .flag{ font-size:11px; margin-left:3px; }
+  .bal-track{ position:relative; height:9px; border-radius:5px; background:var(--paper-deep); }
+  .bal-fill{ position:absolute; top:0; left:0; height:100%; border-radius:5px; background:var(--bal-color,#999); transition:width .2s ease; }
+  .bal-fill.warn{ background:var(--vermillion); }
+  .bal-target-tick{ position:absolute; top:-2.5px; bottom:-2.5px; width:2px; background:var(--ink); opacity:.5; }
+  .bal-amt{ font-size:11px; color:var(--ink-soft); margin-top:4px; }
+  .bal-legend{ display:flex; gap:14px; padding:2px 4px 14px; flex-wrap:wrap; }
+  .bal-legend span{ font-size:11px; color:var(--ink-soft); display:flex; align-items:center; gap:5px;}
+  .bal-legend span::before{ content:""; width:9px; height:9px; border-radius:2px; background:var(--lg-color,#999);}
+  .target-pct-input{ border:none; outline:none; text-align:right; font-size:17px; width:52px;
+    font-family:'Shippori Mincho', serif; color:var(--ink); background:transparent;}
 
   /* ---------- SETTINGS view ---------- */
   .cat-list-row{ display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--line);}
@@ -396,39 +414,34 @@
     </div>
     <div id="graph-body"></div>
 
-    <div class="section-title">全期間の収支推移</div>
-    <div class="card" style="padding:16px 10px 10px;">
-      <div class="chart-wrap" id="chart-monthly-wrap" style="height:190px;">
-        <canvas id="chart-monthly"></canvas>
-      </div>
-      <p class="empty-note" id="chart-monthly-empty" style="display:none;">まだ記録がありません。</p>
+    <div class="section-title">生活費・自由費・貯蓄のバランス</div>
+    <div class="bal-legend">
+      <span style="--lg-color:#6C7A96;">生活費(食費/日用品/交通費/治療費/税金/仕事)</span>
+      <span style="--lg-color:#B4922E;">自由費(交際費/趣味/嗜好品/ファッション/その他)</span>
+      <span style="--lg-color:#2E7D5B;">貯蓄・投資(収入−支出)</span>
     </div>
-
-    <div class="section-title">カテゴリー・トレンド</div>
-    <div class="segmented" id="rank-toggle" style="margin-bottom:12px;">
-      <button data-rtype="expense" class="active" data-active-color="expense">支出</button>
-      <button data-rtype="income" data-active-color="income">収入</button>
-    </div>
-
-    <div class="card" style="padding:16px 10px 10px; margin-bottom:14px;">
-      <p class="chart-sublabel">カテゴリー別ランキング(全期間)</p>
-      <div class="chart-wrap" id="chart-category-wrap" style="height:210px;">
-        <canvas id="chart-category"></canvas>
-      </div>
-      <p class="empty-note" id="chart-category-empty" style="display:none;">まだ記録がありません。</p>
-    </div>
-
-    <div class="card" style="padding:16px 10px 10px;">
-      <p class="chart-sublabel">月別×カテゴリー推移</p>
-      <div class="chart-wrap" id="chart-trend-wrap" style="height:230px;">
-        <canvas id="chart-trend"></canvas>
-      </div>
-      <p class="empty-note" id="chart-trend-empty" style="display:none;">まだ記録がありません。</p>
-    </div>
+    <div id="balance-list"></div>
   </main>
 
   <!-- 設定 -->
   <main class="view" id="view-settings">
+    <div class="section-title">生活費・自由費・貯蓄の目標割合</div>
+    <div class="card">
+      <div class="field">
+        <label>生活費の目標</label>
+        <div><input type="text" id="target-living" class="target-pct-input" inputmode="numeric"><span style="font-size:14px;color:var(--ink-soft);">%</span></div>
+      </div>
+      <div class="field">
+        <label>自由費の目標</label>
+        <div><input type="text" id="target-discretionary" class="target-pct-input" inputmode="numeric"><span style="font-size:14px;color:var(--ink-soft);">%</span></div>
+      </div>
+      <div class="field">
+        <label>貯蓄・投資の目標</label>
+        <div><input type="text" id="target-savings" class="target-pct-input" inputmode="numeric"><span style="font-size:14px;color:var(--ink-soft);">%</span></div>
+      </div>
+    </div>
+    <p class="about-note">収入に対する割合の目標です。実際の割合がこの数値より高くなった月は、グラフ内で強調表示されます(生活費・自由費は使いすぎのサインとして朱色に、貯蓄・投資は目標達成のサインとして藍色で強調します)。</p>
+
     <div class="section-title">CSVエクスポート</div>
     <div class="card" style="padding:14px;">
       <div class="settings-btn-group">
@@ -620,16 +633,20 @@
   var graphMonth = firstOfMonth(new Date());
   var graphType = 'expense';
   var editingTxId = null;
-  var rankType = 'expense';
-  var chartMonthly = null, chartCategory = null, chartTrend = null;
-  if(typeof Chart !== 'undefined'){
-    Chart.defaults.font.family = "'Zen Kaku Gothic New', sans-serif";
-    Chart.defaults.color = '#2B2A28';
+
+  var LIVING_IDS = ['food','daily','transport','medical','tax','work'];
+  var LS_TARGETS = 'tsuzuru_targets';
+  var defaultTargets = {living:50, discretionary:30, savings:20};
+  function loadTargets(){
+    var t = loadJSON(LS_TARGETS, null);
+    if(!t) return JSON.parse(JSON.stringify(defaultTargets));
+    return {
+      living: Number(t.living)||0,
+      discretionary: Number(t.discretionary)||0,
+      savings: Number(t.savings)||0
+    };
   }
-  function formatMonthShort(mo){
-    var parts = mo.split('-');
-    return parts[0].slice(2) + '/' + parts[1];
-  }
+  function saveTargets(t){ saveJSON(LS_TARGETS, t); }
 
   function firstOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
   function addMonths(d, n){ return new Date(d.getFullYear(), d.getMonth()+n, 1); }
@@ -640,6 +657,13 @@
     input:'今日の出入りを記録する', calendar:'月ごとの記録をふりかえる',
     graph:'カテゴリー別の内訳を見る', settings:'カテゴリーとデータの管理'
   };
+  function renderTargetInputs(){
+    var t = loadTargets();
+    document.getElementById('target-living').value = t.living;
+    document.getElementById('target-discretionary').value = t.discretionary;
+    document.getElementById('target-savings').value = t.savings;
+  }
+
   function switchTab(tab){
     document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('active'); });
     document.getElementById('view-'+tab).classList.add('active');
@@ -647,7 +671,7 @@
     document.getElementById('subhead').textContent = subheads[tab] || '';
     if(tab==='calendar') renderCalendar();
     if(tab==='graph') renderGraphAll();
-    if(tab==='settings') renderSettingsCats();
+    if(tab==='settings'){ renderSettingsCats(); renderTargetInputs(); }
   }
 
   /* ---------------- input view ---------------- */
@@ -793,138 +817,80 @@
     document.getElementById('cal-tx-list').innerHTML = out;
   }
 
-  /* ---------------- 全期間ダッシュボード用の集計 ---------------- */
-  function computeMonthlyAll(){
+  /* ---------------- 生活費・自由費・貯蓄バランスの集計 ---------------- */
+  function computeBalanceAll(){
     var map = {};
     transactions.forEach(function(t){
       var mo = t.date.slice(0,7);
-      if(!map[mo]) map[mo] = {inc:0, exp:0};
-      if(t.type==='income') map[mo].inc += t.amount; else map[mo].exp += t.amount;
+      if(!map[mo]) map[mo] = {income:0, living:0, discretionary:0};
+      if(t.type==='income'){
+        map[mo].income += t.amount;
+      } else {
+        if(LIVING_IDS.indexOf(t.categoryId)>=0) map[mo].living += t.amount;
+        else map[mo].discretionary += t.amount;
+      }
     });
-    var months = Object.keys(map).sort();
+    var months = Object.keys(map).sort().reverse(); // 新しい月が上に来るように
     return months.map(function(mo){
       var v = map[mo];
-      return {month:mo, inc:v.inc, exp:v.exp, net:v.inc-v.exp};
+      return { month:mo, income:v.income, living:v.living, discretionary:v.discretionary, savings: v.income - v.living - v.discretionary };
     });
   }
 
-  function computeCategoryAll(type){
-    var map = {};
-    transactions.forEach(function(t){
-      if(t.type!==type) return;
-      map[t.categoryId] = (map[t.categoryId]||0) + t.amount;
-    });
-    var rows = Object.keys(map).map(function(id){
-      var cat = catById(type, id);
-      return {id:id, name:cat.name, color:cat.color, amount:map[id]};
-    });
-    rows.sort(function(a,b){ return b.amount-a.amount; });
-    return rows;
+  function pct(n){
+    var r = Math.round(n*10)/10;
+    return (Number.isInteger(r) ? r : r.toFixed(1)) + '%';
   }
 
-  function computeTrendAll(type){
-    var monthCatMap = {};
-    transactions.forEach(function(t){
-      if(t.type!==type) return;
-      var mo = t.date.slice(0,7);
-      if(!monthCatMap[mo]) monthCatMap[mo] = {};
-      monthCatMap[mo][t.categoryId] = (monthCatMap[mo][t.categoryId]||0) + t.amount;
-    });
-    var months = Object.keys(monthCatMap).sort();
-    var catRows = computeCategoryAll(type);
-    var datasets = catRows.map(function(cat){
-      return {
-        id: cat.id, name: cat.name, color: cat.color,
-        data: months.map(function(mo){ return (monthCatMap[mo] && monthCatMap[mo][cat.id]) || 0; })
-      };
-    });
-    return {months:months, datasets:datasets};
+  function balanceRowHTML(name, colorVar, amount, ratioPct, targetPct, tone){
+    // tone: 'warn'(高いと使いすぎ) or 'good'(高いと目標達成)
+    var isOver = ratioPct > targetPct;
+    var pctClass = isOver ? (tone==='good' ? 'good' : 'warn') : '';
+    var fillClass = (isOver && tone!=='good') ? 'warn' : '';
+    var flag = isOver ? (tone==='good' ? ' <span class="flag">◎達成</span>' : ' <span class="flag">⚠超過</span>') : '';
+    var fillWidth = Math.max(0, Math.min(100, ratioPct));
+    var tickLeft = Math.max(0, Math.min(100, targetPct));
+    return '' +
+    '<div class="bal-row" style="--bal-color:'+colorVar+'">'+
+      '<div class="bal-row-head">'+
+        '<span class="name">'+name+'</span>'+
+        '<span class="pct '+pctClass+'">'+pct(ratioPct)+flag+'</span>'+
+      '</div>'+
+      '<div class="bal-track">'+
+        '<div class="bal-fill '+fillClass+'" style="width:'+fillWidth+'%;"></div>'+
+        '<div class="bal-target-tick" style="left:'+tickLeft+'%;"></div>'+
+      '</div>'+
+      '<div class="bal-amt">'+amount.toLocaleString('ja-JP')+'円 ／ 目標 '+targetPct+'%</div>'+
+    '</div>';
   }
 
-  function renderChartsDashboard(){
-    if(typeof Chart === 'undefined') return; // CDNが読み込めない場合は静かにスキップ
-
-    var monthly = computeMonthlyAll();
-    var catRows = computeCategoryAll(rankType);
-    var trend = computeTrendAll(rankType);
-
-    // --- 1. 全期間の収支推移 ---
-    if(chartMonthly){ chartMonthly.destroy(); chartMonthly = null; }
-    document.getElementById('chart-monthly-wrap').style.display = monthly.length ? '' : 'none';
-    document.getElementById('chart-monthly-empty').style.display = monthly.length ? 'none' : '';
-    if(monthly.length){
-      chartMonthly = new Chart(document.getElementById('chart-monthly').getContext('2d'), {
-        data: {
-          labels: monthly.map(function(m){ return formatMonthShort(m.month); }),
-          datasets: [
-            { type:'bar', label:'収入', data: monthly.map(function(m){return m.inc;}), backgroundColor:'#2E7D5B', borderRadius:3, order:2 },
-            { type:'bar', label:'支出', data: monthly.map(function(m){return m.exp;}), backgroundColor:'#B8443C', borderRadius:3, order:2 },
-            { type:'line', label:'収支', data: monthly.map(function(m){return m.net;}), borderColor:'#B4922E', backgroundColor:'#B4922E', borderWidth:2, pointRadius:2.5, tension:.25, order:1 }
-          ]
-        },
-        options: {
-          maintainAspectRatio:false,
-          scales:{
-            y:{ ticks:{ font:{size:10}, callback:function(v){ return v.toLocaleString('ja-JP'); } }, grid:{ color:'rgba(43,42,40,0.07)' } },
-            x:{ ticks:{ font:{size:10} }, grid:{ display:false } }
-          },
-          plugins:{
-            legend:{ position:'bottom', labels:{ boxWidth:12, usePointStyle:true, font:{size:11} } },
-            tooltip:{ callbacks:{ label:function(c){ return c.dataset.label+': '+c.parsed.y.toLocaleString('ja-JP')+'円'; } } }
-          }
-        }
-      });
+  function renderBalanceList(){
+    var el = document.getElementById('balance-list');
+    var rows = computeBalanceAll();
+    if(rows.length===0){
+      el.innerHTML = '<p class="empty-note">まだ記録がありません。「入力」タブから記録してみましょう。</p>';
+      return;
     }
+    var targets = loadTargets();
+    var html = '';
+    rows.forEach(function(r){
+      var hasIncome = r.income > 0;
+      var base = hasIncome ? r.income : (r.living + r.discretionary);
+      var livingPct = base>0 ? (r.living/base*100) : 0;
+      var discPct = base>0 ? (r.discretionary/base*100) : 0;
+      var savingsPct = base>0 ? (r.savings/base*100) : 0;
+      var noteHtml = hasIncome ? '' : '<p class="bal-amt" style="margin-bottom:10px;">この月は収入の記録がないため、支出合計を基準(100%)にした割合です。</p>';
 
-    // --- 2. カテゴリー別ランキング ---
-    if(chartCategory){ chartCategory.destroy(); chartCategory = null; }
-    document.getElementById('chart-category-wrap').style.display = catRows.length ? '' : 'none';
-    document.getElementById('chart-category-empty').style.display = catRows.length ? 'none' : '';
-    if(catRows.length){
-      chartCategory = new Chart(document.getElementById('chart-category').getContext('2d'), {
-        type:'bar',
-        data:{
-          labels: catRows.map(function(c){return c.name;}),
-          datasets:[{ data: catRows.map(function(c){return c.amount;}), backgroundColor: catRows.map(function(c){return c.color;}), borderRadius:3, barThickness:16 }]
-        },
-        options:{
-          indexAxis:'y',
-          maintainAspectRatio:false,
-          scales:{
-            x:{ ticks:{ font:{size:10}, callback:function(v){ return v.toLocaleString('ja-JP'); } }, grid:{ color:'rgba(43,42,40,0.07)' } },
-            y:{ ticks:{ font:{size:11.5} }, grid:{ display:false } }
-          },
-          plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:function(c){ return c.parsed.x.toLocaleString('ja-JP')+'円'; } } } }
-        }
-      });
-    }
-
-    // --- 3. 月別×カテゴリー推移 ---
-    if(chartTrend){ chartTrend.destroy(); chartTrend = null; }
-    document.getElementById('chart-trend-wrap').style.display = trend.months.length ? '' : 'none';
-    document.getElementById('chart-trend-empty').style.display = trend.months.length ? 'none' : '';
-    if(trend.months.length){
-      chartTrend = new Chart(document.getElementById('chart-trend').getContext('2d'), {
-        type:'bar',
-        data:{
-          labels: trend.months.map(formatMonthShort),
-          datasets: trend.datasets.map(function(d){
-            return { label:d.name, data:d.data, backgroundColor:d.color, stack:'s' };
-          })
-        },
-        options:{
-          maintainAspectRatio:false,
-          scales:{
-            x:{ stacked:true, ticks:{font:{size:10}}, grid:{display:false} },
-            y:{ stacked:true, ticks:{ font:{size:10}, callback:function(v){return v.toLocaleString('ja-JP');} }, grid:{ color:'rgba(43,42,40,0.07)' } }
-          },
-          plugins:{
-            legend:{ position:'bottom', labels:{ boxWidth:10, usePointStyle:true, font:{size:10} } },
-            tooltip:{ callbacks:{ label:function(c){ return c.dataset.label+': '+c.parsed.y.toLocaleString('ja-JP')+'円'; } } }
-          }
-        }
-      });
-    }
+      var y = r.month.slice(0,4), m = Number(r.month.slice(5,7));
+      html += '<div class="card bal-card">'+
+        '<div class="bal-month">'+y+'年'+m+'月</div>'+
+        noteHtml+
+        balanceRowHTML('生活費', '#6C7A96', r.living, livingPct, targets.living, 'warn')+
+        balanceRowHTML('自由費', '#B4922E', r.discretionary, discPct, targets.discretionary, 'warn')+
+        balanceRowHTML('貯蓄・投資', '#2E7D5B', r.savings, savingsPct, targets.savings, 'good')+
+      '</div>';
+    });
+    el.innerHTML = html;
   }
 
   /* ---------------- graph view ---------------- */
@@ -989,7 +955,7 @@
 
   function renderGraphAll(){
     renderGraph();
-    renderChartsDashboard();
+    renderBalanceList();
   }
 
   /* ---------------- edit modal ---------------- */
@@ -1239,11 +1205,22 @@
   document.querySelector('[data-graph-nav="-1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,-1); renderGraph(); });
   document.querySelector('[data-graph-nav="1"]').addEventListener('click', function(){ graphMonth = addMonths(graphMonth,1); renderGraph(); });
 
-  document.getElementById('rank-toggle').addEventListener('click', function(e){
-    var btn = e.target.closest('button[data-rtype]'); if(!btn) return;
-    rankType = btn.dataset.rtype;
-    document.querySelectorAll('#rank-toggle button').forEach(function(b){ b.classList.toggle('active', b===btn); });
-    renderChartsDashboard();
+  ['target-living','target-discretionary','target-savings'].forEach(function(id){
+    var input = document.getElementById(id);
+    input.addEventListener('input', function(){
+      this.value = this.value.replace(/[^0-9]/g,'').slice(0,3);
+    });
+    input.addEventListener('change', function(){
+      var t = loadTargets();
+      var key = id.replace('target-','');
+      var v = Number(this.value);
+      if(!isFinite(v) || v<0) v = 0;
+      if(v>999) v = 999;
+      t[key] = v;
+      this.value = v;
+      saveTargets(t);
+      renderBalanceList();
+    });
   });
 
   document.getElementById('modal-amount').addEventListener('input', function(){
