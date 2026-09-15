@@ -454,7 +454,7 @@
     <div class="card" id="cat-list-expense"></div>
     <div class="card" style="margin-top:8px;">
       <form class="addcat-form" id="addcat-form-expense">
-        <input type="color" value="#9B9182">
+        <input type="color" id="addcat-color-expense">
         <input type="text" placeholder="新しいカテゴリー名" maxlength="10">
         <button type="submit">＋</button>
       </form>
@@ -464,7 +464,7 @@
     <div class="card" id="cat-list-income"></div>
     <div class="card" style="margin-top:8px;">
       <form class="addcat-form" id="addcat-form-income">
-        <input type="color" value="#9B9182">
+        <input type="color" id="addcat-color-income">
         <input type="text" placeholder="新しいカテゴリー名" maxlength="10">
         <button type="submit">＋</button>
       </form>
@@ -671,7 +671,7 @@
     document.getElementById('subhead').textContent = subheads[tab] || '';
     if(tab==='calendar') renderCalendar();
     if(tab==='graph') renderGraphAll();
-    if(tab==='settings'){ renderSettingsCats(); renderTargetInputs(); }
+    if(tab==='settings'){ renderSettingsCats(); renderTargetInputs(); refreshAddCatColorDefaults(); }
   }
 
   /* ---------------- input view ---------------- */
@@ -1014,6 +1014,50 @@
     renderCalendar();
   }
 
+  /* ---------------- カテゴリー色の自動提案 ---------------- */
+  var CATEGORY_PALETTE = [
+    '#7A8B5C','#8CA7A0','#C97F5D','#A0678A','#6C7A96','#4A4740',
+    '#B4922E','#B8443C','#8A6D9B','#C97FA0','#375E76','#4C7C6E',
+    '#5C7A8B','#B08D57','#7A5C46','#6B8E6B','#9C6B4E','#5A7A9C',
+    '#8B6B9C','#B06B6B','#6B9C8E','#9B9182'
+  ];
+  function hslToHex(h,s,l){
+    s/=100; l/=100;
+    var c = (1-Math.abs(2*l-1))*s;
+    var x = c*(1-Math.abs((h/60)%2-1));
+    var m = l-c/2;
+    var r=0,g=0,b=0;
+    if(h<60){ r=c;g=x;b=0; } else if(h<120){ r=x;g=c;b=0; }
+    else if(h<180){ r=0;g=c;b=x; } else if(h<240){ r=0;g=x;b=c; }
+    else if(h<300){ r=x;g=0;b=c; } else { r=c;g=0;b=x; }
+    var toHex = function(v){ return ('0'+Math.round((v+m)*255).toString(16)).slice(-2); };
+    return '#'+toHex(r)+toHex(g)+toHex(b);
+  }
+  function randomPleasantColor(){
+    var h = Math.floor(Math.random()*360);
+    var s = 28 + Math.floor(Math.random()*22); // 28-50%
+    var l = 38 + Math.floor(Math.random()*18); // 38-56%(和紙のトーンに馴染む落ち着いた明るさ)
+    return hslToHex(h,s,l);
+  }
+  function pickUnusedColor(type){
+    var used = {};
+    (categories[type]||[]).forEach(function(c){ used[String(c.color).toLowerCase()] = true; });
+    for(var i=0;i<CATEGORY_PALETTE.length;i++){
+      var candidate = CATEGORY_PALETTE[i];
+      if(!used[candidate.toLowerCase()]) return candidate;
+    }
+    // パレットを使い切っていたら、既存と重複しない色をランダム生成
+    var color, tries = 0;
+    do{ color = randomPleasantColor(); tries++; } while(used[color.toLowerCase()] && tries<20);
+    return color;
+  }
+  function refreshAddCatColorDefaults(){
+    var expInput = document.getElementById('addcat-color-expense');
+    var incInput = document.getElementById('addcat-color-income');
+    if(expInput) expInput.value = pickUnusedColor('expense');
+    if(incInput) incInput.value = pickUnusedColor('income');
+  }
+
   /* ---------------- settings: categories ---------------- */
   function renderSettingsCats(){
     ['expense','income'].forEach(function(type){
@@ -1032,6 +1076,7 @@
     persistCat();
     renderSettingsCats();
     renderInputChips();
+    refreshAddCatColorDefaults();
   }
   function deleteCategory(type, id){
     if(categories[type].length<=1){ alert('最後の1件は削除できません。'); return; }
@@ -1106,8 +1151,7 @@
     if(!name) name = 'その他';
     var list = categories[type];
     for(var i=0;i<list.length;i++){ if(list[i].name===name) return list[i].id; }
-    var palette = ['#7A8B5C','#8CA7A0','#C97F5D','#A0678A','#6C7A96','#4A4740','#B4922E','#B8443C','#8A6D9B','#C97FA0','#375E76','#4C7C6E'];
-    var color = palette[list.length % palette.length];
+    var color = pickUnusedColor(type);
     var id = type[0]+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
     list.push({id:id, name:name.slice(0,10), color:color});
     return id;
@@ -1276,6 +1320,7 @@
   /* ---------------- init ---------------- */
   document.getElementById('date-input').value = todayISO();
   renderInputChips();
+  refreshAddCatColorDefaults();
   switchTab('input');
 })();
 </script>
