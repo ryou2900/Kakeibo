@@ -425,6 +425,15 @@
 
   <!-- 設定 -->
   <main class="view" id="view-settings">
+    <div class="section-title">ふるさと納税 上限額の設定</div>
+    <div class="card">
+      <div class="field">
+        <label>扶養人数</label>
+        <div><input type="text" id="furusato-dependents" class="target-pct-input" inputmode="numeric" style="width:40px;"><span style="font-size:14px;color:var(--ink-soft);">人</span></div>
+      </div>
+    </div>
+    <p class="about-note">配偶者控除・扶養控除の対象となる人数(16歳以上の扶養親族。配偶者を含む)を入力してください。「貯金額」タブで、その年の給与・賞与の合計額をもとにした、ふるさと納税の上限額(概算)の計算に使われます。給与所得のみを前提にした簡易計算のため、あくまで目安です。社会保険料の個別状況や医療費控除・iDeCoなど他の控除は考慮していません。正確な金額は住民税決定通知書、または自治体・税理士にご確認ください。</p>
+
     <div class="section-title">生活費・自由費・貯蓄の目標割合</div>
     <div class="card">
       <div class="field">
@@ -668,7 +677,7 @@
     document.getElementById('subhead').textContent = subheads[tab] || '';
     if(tab==='calendar') renderCalendar();
     if(tab==='graph') renderGraphAll();
-    if(tab==='settings'){ renderSettingsCats(); renderTargetInputs(); refreshAddCatColorDefaults(); }
+    if(tab==='settings'){ renderSettingsCats(); renderTargetInputs(); refreshAddCatColorDefaults(); document.getElementById('furusato-dependents').value = loadFurusatoDependents(); }
   }
 
   /* ---------------- input view ---------------- */
@@ -881,6 +890,72 @@
     '</div>';
   }
 
+  /* ---------------- ふるさと納税 上限額(概算) ---------------- */
+  var LS_FURUSATO_DEP = 'tsuzuru_furusato_dependents';
+  function loadFurusatoDependents(){
+    var v = Number(loadJSON(LS_FURUSATO_DEP, 0));
+    if(!isFinite(v) || v<0) v = 0;
+    return Math.min(5, Math.round(v));
+  }
+  function saveFurusatoDependents(v){ saveJSON(LS_FURUSATO_DEP, v); }
+
+  // 出典:国税庁「源泉所得税の改正のあらまし」等に基づく概算式。
+  // 給与所得のみを前提とした簡易計算で、社会保険料の個別状況や他の所得控除は考慮していません。
+  function calcFurusatoLimit(nenshuEn, dependents){
+    nenshuEn = Math.max(0, Math.round(nenshuEn||0));
+    dependents = Math.max(0, Math.min(5, Math.round(dependents||0)));
+
+    function kyuyoKojo(n){
+      if(n<=0) return 0;
+      if(n<=2200000) return Math.min(n, 740000);
+      if(n<=3600000) return Math.floor(n*0.3/1000)*1000 + 80000;
+      if(n<=6600000) return Math.floor(n*0.2/1000)*1000 + 440000;
+      if(n<=8500000) return Math.floor(n*0.1/1000)*1000 + 1100000;
+      return 1950000;
+    }
+    var kyuyoShotoku = Math.max(0, nenshuEn - kyuyoKojo(nenshuEn)); // 給与所得
+
+    // 社会保険料控除(給与収入に応じた概算率。多くの簡易シミュレーターと同じ考え方)
+    function shakaiHokenKojo(n){
+      if(n<=20000000) return Math.round(n*0.15);
+      if(n<=30000000) return Math.round(n*0.10);
+      if(n<=50000000) return Math.round(n*0.07);
+      return Math.round(n*0.04);
+    }
+    var shakaiHoken = shakaiHokenKojo(nenshuEn);
+    var kyuyoShotokuAfterShakai = Math.max(0, kyuyoShotoku - shakaiHoken);
+
+    // 住民税所得割(住民税の基礎控除43万円は据え置き、扶養控除は33万円/人)
+    var juminKojo = 430000 + dependents*330000;
+    var juminShotokuwari = Math.max(0, (kyuyoShotokuAfterShakai - juminKojo)) * 0.10;
+
+    // 所得税の限界税率を求めるための課税所得(令和8・9年分の所得税基礎控除、扶養控除は38万円/人)
+    function shotokuKiso(goukeiShotoku){
+      if(goukeiShotoku<=4890000) return 1040000;
+      if(goukeiShotoku<=6550000) return 670000;
+      if(goukeiShotoku<=23500000) return 620000;
+      return 0;
+    }
+    var taxable = Math.max(0, kyuyoShotokuAfterShakai - shotokuKiso(kyuyoShotoku) - dependents*380000);
+    function marginalRate(ti){
+      if(ti<=1950000) return 0.05;
+      if(ti<=3300000) return 0.10;
+      if(ti<=6950000) return 0.20;
+      if(ti<=9000000) return 0.23;
+      if(ti<=18000000) return 0.33;
+      if(ti<=40000000) return 0.40;
+      return 0.45;
+    }
+    var rate = marginalRate(taxable);
+
+    if(juminShotokuwari<=0) return {limit:0, juminShotokuwari:0};
+
+    var denom = 0.9 - rate*1.021;
+    var limitRaw = (juminShotokuwari*0.20)/denom + 2000;
+    var limit = Math.max(0, Math.floor(limitRaw/1000)*1000); // 1,000円単位に切り捨て
+    return {limit:limit, juminShotokuwari:Math.round(juminShotokuwari)};
+  }
+
   /* ---------------- graph view ---------------- */
   function renderGraph(){
     document.getElementById('graph-month-label').textContent = monthLabel(graphMonth);
@@ -893,10 +968,33 @@
         var ty = Number(t.date.slice(0,4)), tm = Number(t.date.slice(5,7))-1;
         if(ty<y || (ty===y && tm<=m)){ net += t.type==='income' ? t.amount : -t.amount; }
       });
+
+      // その年(y年)の給与+賞与の合計 = 総支給(年収)
+      var grossPay = 0;
+      transactions.forEach(function(t){
+        if(t.type==='income' && Number(t.date.slice(0,4))===y &&
+           (t.categoryId==='salary' || t.categoryId==='bonus')){
+          grossPay += t.amount;
+        }
+      });
+      var isCurrentYear = (y === new Date().getFullYear());
+
+      var furusato = calcFurusatoLimit(grossPay, loadFurusatoDependents());
+
       body.innerHTML = '<div class="card savings-card">'+
         '<div class="t">'+monthLabel(graphMonth)+' 末時点の貯金額</div>'+
         '<div class="v '+(net<0?'neg':'pos')+'">'+yen(net)+'</div>'+
         '<div class="n">すべての収入からすべての支出を差し引いた、この月の末までの累計です。</div>'+
+      '</div>'+
+      '<div class="card savings-card" style="margin-top:14px;">'+
+        '<div class="t">'+y+'年の総支給(給与+賞与)</div>'+
+        '<div class="v pos">'+yen(grossPay)+'</div>'+
+        '<div class="n">'+(isCurrentYear ? 'この年はまだ記録の途中です。年内の記録が増えるほど金額は変わります。' : y+'年の給与・賞与の記録をすべて合計した金額(額面ベースの年収)です。')+'</div>'+
+      '</div>'+
+      '<div class="card savings-card" style="margin-top:14px;">'+
+        '<div class="t">ふるさと納税 上限額(概算)</div>'+
+        '<div class="v pos">'+yen(furusato.limit)+'</div>'+
+        '<div class="n">上記の総支給額と、設定タブの扶養人数('+loadFurusatoDependents()+'人)をもとにした概算です。給与所得のみを前提とした簡易計算のため、あくまで目安としてご利用ください。'+(isCurrentYear?' 年の途中の金額をもとにしているため、年末に近づくほど精度が上がります。':'')+' 正確な金額は住民税決定通知書、または自治体・税理士にご確認ください。</div>'+
       '</div>';
       return;
     }
@@ -1286,6 +1384,18 @@
       saveTargets(t);
       renderBalanceList();
     });
+  });
+
+  var furusatoInput = document.getElementById('furusato-dependents');
+  furusatoInput.addEventListener('input', function(){
+    this.value = this.value.replace(/[^0-9]/g,'').slice(0,1);
+  });
+  furusatoInput.addEventListener('change', function(){
+    var v = Number(this.value);
+    if(!isFinite(v) || v<0) v = 0;
+    if(v>5) v = 5;
+    this.value = v;
+    saveFurusatoDependents(v);
   });
 
   document.getElementById('modal-amount').addEventListener('input', function(){
