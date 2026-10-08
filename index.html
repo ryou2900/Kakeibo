@@ -186,12 +186,10 @@
   .cal-cell:nth-child(7n){ border-right:none; }
   .cal-cell .dnum{ font-size:11.5px; color:var(--ink-soft); }
   .cal-cell.out .dnum{ color:#D8CDB4; }
-  .cal-cell.today{ background:rgba(46,125,91,0.08); }
+  .cal-cell.today{ box-shadow: inset 0 0 0 1.5px var(--indigo); }
   .cal-cell.today .dnum{ color:var(--indigo); font-weight:700; }
-  .cal-cell.has-exp{ background:rgba(184,68,60,0.05); }
-  .cal-cell.has-inc{ background:rgba(46,125,91,0.05); }
-  .cal-cell.today.has-exp{ background:rgba(184,68,60,0.1); }
-  .cal-cell.today.has-inc{ background:rgba(46,125,91,0.12); }
+  .cal-cell.day-red{ background:rgba(184,68,60,0.14); }
+  .cal-cell.day-green{ background:rgba(46,125,91,0.14); }
   .cal-amts{ text-align:right; }
   .cal-amt{ display:block; font-size:9.5px; line-height:1.35; font-weight:700; font-family:'Zen Kaku Gothic New',sans-serif;}
   .cal-amt.exp{ color:var(--vermillion); }
@@ -777,8 +775,13 @@
       var isToday = iso===todayIso;
       var lines = [];
       var cellExtra = '';
-      if(tot.exp>0){ lines.push('<span class="cal-amt exp">-'+tot.exp.toLocaleString('ja-JP')+'</span>'); cellExtra+=' has-exp'; }
-      if(tot.inc>0){ lines.push('<span class="cal-amt inc">+'+tot.inc.toLocaleString('ja-JP')+'</span>'); cellExtra+=' has-inc'; }
+      if(tot.exp>0){ lines.push('<span class="cal-amt exp">-'+tot.exp.toLocaleString('ja-JP')+'</span>'); }
+      if(tot.inc>0){ lines.push('<span class="cal-amt inc">+'+tot.inc.toLocaleString('ja-JP')+'</span>'); }
+      if(tot.exp>0 || tot.inc>0){
+        if(tot.exp > tot.inc) cellExtra = ' day-red';
+        else if(tot.exp < tot.inc) cellExtra = ' day-green';
+        // 支出と収入が同額(かつ0円でない)の場合は、どちらとも言えないため白のままにしています
+      }
       var amtHtml = lines.length ? '<div class="cal-amts">'+lines.join('')+'</div>' : '';
       html += '<div class="cal-cell'+(c.out?' out':'')+(isToday?' today':'')+cellExtra+'"><span class="dnum">'+c.d+'</span>'+amtHtml+'</div>';
     });
